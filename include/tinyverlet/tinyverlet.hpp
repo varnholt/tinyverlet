@@ -27,6 +27,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <concepts>
 #include <cstddef>
@@ -207,6 +208,12 @@ struct Settings
    float tear_ratio = 0.0f;      // > 1 removes constraints stretched beyond rest_length * tear_ratio
    std::optional<float> ground;  // plane y = ground, particles stay above it
    std::optional<Box> bounds;    // particles stay inside
+
+   // > 0 turns on self-collision: particles act as spheres of this radius and
+   // push each other apart, so cloth folds stack instead of passing through.
+   // Pick a bit under half the cloth spacing. Pairs joined by a constraint
+   // shorter than two radii never collide. Off (0) by default.
+   float particle_radius = 0.0f;
 };
 
 namespace detail
@@ -291,9 +298,17 @@ public:
       }
 
       integrate(dt);
+      if (settings.particle_radius > 0.0f)
+      {
+         find_collision_candidates();
+      }
       for (int i = 0; i < settings.iterations; ++i)
       {
          solve_constraints();
+         if (settings.particle_radius > 0.0f)
+         {
+            collide_particles(i + 1 == settings.iterations);  // friction once per step
+         }
          collide();
       }
       return tear();
@@ -391,6 +406,137 @@ private:
       }
    }
 
+   // Self-collision runs in two parts. Once per step, a spatial hash finds all
+   // pairs closer than 1.5 diameters (the margin covers motion during the
+   // step) that are not joined by a short constraint. Every iteration then only
+   // walks that list and pushes apart the pairs that are closer than a diameter.
+   [[nodiscard]] std::uint32_t hash_cell(std::int64_t x, std::int64_t y, std::int64_t z) const noexcept
+   {
+      const auto h = (static_cast<std::uint64_t>(x) * 92837111u) ^ (static_cast<std::uint64_t>(y) * 689287499u) ^
+                     (static_cast<std::uint64_t>(z) * 283923481u);
+      return static_cast<std::uint32_t>(h & (cell_start_.size() - 2));  // table size is a power of two
+   }
+
+   void find_collision_candidates()
+   {
+      candidates_.clear();
+      const auto count = particles.size();
+      if (count < 2)
+      {
+         return;
+      }
+
+      const float diameter = 2.0f * settings.particle_radius;
+      const float reach = 1.5f * diameter;
+
+      // pairs joined by a constraint shorter than the collision distance never
+      // collide, otherwise a large radius would push a cloth's own neighbours apart
+      connected_.clear();
+      for (const auto& c : constraints)
+      {
+         if (c.rest_length < diameter)
+         {
+            connected_.insert(detail::edge_key(c.a, c.b));
+         }
+      }
+
+      // dense spatial hash with cells `reach` wide: cell_start_ holds, per
+      // bucket, the range of cell_entries_ with the particles in that bucket
+      const float inverse_cell = 1.0f / reach;
+      const auto cell_of = [inverse_cell](float v)
+      {
+         return static_cast<std::int64_t>(std::floor(v * inverse_cell));
+      };
+      const auto table = std::bit_ceil(2 * count);
+      cell_start_.assign(table + 1, 0);
+      cell_entries_.resize(count);
+      particle_bucket_.resize(count);
+      for (std::size_t i = 0; i < count; ++i)
+      {
+         const auto& p = particles[i].position;
+         particle_bucket_[i] = hash_cell(cell_of(p.x), cell_of(p.y), cell_of(p.z));
+         ++cell_start_[particle_bucket_[i]];
+      }
+      for (std::size_t b = 1; b <= table; ++b)
+      {
+         cell_start_[b] += cell_start_[b - 1];
+      }
+      for (std::size_t i = 0; i < count; ++i)
+      {
+         cell_entries_[--cell_start_[particle_bucket_[i]]] = static_cast<std::uint32_t>(i);
+      }
+
+      const float reach_squared = reach * reach;
+      for (std::uint32_t i = 0; i < count; ++i)
+      {
+         const auto& pi = particles[i];
+         const auto cx = cell_of(pi.position.x);
+         const auto cy = cell_of(pi.position.y);
+         const auto cz = cell_of(pi.position.z);
+         for (std::int64_t dx = -1; dx <= 1; ++dx)
+         {
+            for (std::int64_t dy = -1; dy <= 1; ++dy)
+            {
+               for (std::int64_t dz = -1; dz <= 1; ++dz)
+               {
+                  const auto bucket = hash_cell(cx + dx, cy + dy, cz + dz);
+                  for (auto k = cell_start_[bucket]; k < cell_start_[bucket + 1]; ++k)
+                  {
+                     const auto j = cell_entries_[k];
+                     if (j <= i || pi.inverse_mass + particles[j].inverse_mass == 0.0f)
+                     {
+                        continue;  // each pair once; two pinned particles cannot move
+                     }
+                     const Vec3 delta = particles[j].position - pi.position;
+                     if (dot(delta, delta) < reach_squared && !connected_.contains(detail::edge_key(i, j)))
+                     {
+                        candidates_.push_back({i, j});
+                     }
+                  }
+               }
+            }
+         }
+      }
+
+      // a hash collision can report a pair twice; keep one
+      std::ranges::sort(candidates_);
+      candidates_.erase(std::ranges::unique(candidates_).begin(), candidates_.end());
+   }
+
+   void collide_particles(bool apply_friction) noexcept
+   {
+      const float diameter = 2.0f * settings.particle_radius;
+      const float diameter_squared = diameter * diameter;
+      for (const auto& [i, j] : candidates_)
+      {
+         auto& pi = particles[i];
+         auto& pj = particles[j];
+         const Vec3 delta = pj.position - pi.position;
+         const float distance_squared = dot(delta, delta);
+         if (distance_squared >= diameter_squared || distance_squared < 1e-18f)
+         {
+            continue;
+         }
+         const float total = pi.inverse_mass + pj.inverse_mass;
+         const float distance = std::sqrt(distance_squared);
+         const Vec3 correction = delta * ((diameter - distance) / (distance * total));
+         pi.position -= correction * pi.inverse_mass;
+         pj.position += correction * pj.inverse_mass;
+
+         if (apply_friction && settings.friction > 0.0f)
+         {
+            // remove `friction` of the sliding velocity between the two, so
+            // stacked cloth stays put instead of gliding off
+            const Vec3 n = delta * (1.0f / distance);
+            const Vec3 relative = (pj.position - pj.previous) - (pi.position - pi.previous);
+            const Vec3 sliding = relative - n * dot(relative, n);
+            const Vec3 change = sliding * (settings.friction / total);
+            pi.previous -= change * pi.inverse_mass;
+            pj.previous += change * pj.inverse_mass;
+         }
+      }
+   }
+
    std::size_t tear()
    {
       if (!(settings.tear_ratio > 1.0f))
@@ -404,6 +550,13 @@ private:
                               return distance > c.rest_length * settings.tear_ratio;
                            });
    }
+
+   // scratch space for self-collision, kept to avoid reallocating every step
+   std::vector<std::uint32_t> cell_start_;
+   std::vector<std::uint32_t> cell_entries_;
+   std::vector<std::uint32_t> particle_bucket_;
+   std::unordered_set<std::uint64_t> connected_;
+   std::vector<std::array<std::uint32_t, 2>> candidates_;
 };
 
 // a rectangular grid of particles, e.g. cloth

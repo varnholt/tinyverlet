@@ -81,6 +81,21 @@ void draw_ui(App& app)
       ImGui::SliderFloat("##tear", &settings.tear_ratio, 1.1f, 4.0f, "at %.1fx");
    }
 
+   bool self_collision = settings.particle_radius > 0.0f;
+   if (ImGui::Checkbox("self-collision", &self_collision))
+   {
+      settings.particle_radius = self_collision ? app.collision_radius : 0.0f;
+   }
+   if (self_collision)
+   {
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+      if (ImGui::SliderFloat("##radius", &app.collision_radius, 0.005f, 0.08f, "r %.3f"))
+      {
+         settings.particle_radius = app.collision_radius;
+      }
+   }
+
    if (!app.scene.cloths.empty())
    {
       ImGui::Checkbox("wind", &app.wind_enabled);

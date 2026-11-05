@@ -115,6 +115,8 @@ private:
    void draw_mesh(const Mesh& mesh, GLenum mode, const Mat4& mvp, std::array<float, 3> color, int shading,
                   std::array<float, 4> transform = {0.0f, 0.0f, 0.0f, 1.0f}) const;
    void upload_unit_sphere();
+   void draw_range(const Mesh& mesh, std::size_t offset, std::size_t count, const Mat4& mvp,
+                   std::array<float, 3> color) const;
 
    Program program_;
    GLint mvp_location_ = -1;
@@ -131,6 +133,7 @@ private:
 
    std::vector<tinyverlet::Vec3> scratch_vertices_;
    std::vector<std::uint32_t> scratch_indices_;
+   std::vector<std::pair<std::size_t, std::size_t>> cloth_ranges_;  // index offset and count per cloth
 };
 
 }  // namespace testbed
