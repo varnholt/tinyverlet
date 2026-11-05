@@ -303,6 +303,22 @@ void Renderer::draw_mesh(const Mesh& mesh, GLenum mode, const Mat4& mvp, std::ar
    }
 }
 
+void Renderer::draw_range(const Mesh& mesh, std::size_t offset, std::size_t count, const Mat4& mvp,
+                          std::array<float, 3> color) const
+{
+   if (count == 0)
+   {
+      return;
+   }
+   glUniformMatrix4fv(mvp_location_, 1, GL_FALSE, mvp.data());
+   glUniform3f(color_location_, color[0], color[1], color[2]);
+   glUniform1i(shading_location_, 1);
+   glUniform4f(transform_location_, 0.0f, 0.0f, 0.0f, 1.0f);
+   glBindVertexArray(mesh.vao.get());
+   glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(count), GL_UNSIGNED_INT,
+                  reinterpret_cast<const void*>(offset * sizeof(std::uint32_t)));
+}
+
 void Renderer::draw(int width, int height, const Camera& camera, const Scene& scene, const Display& display)
 {
    const auto& world = scene.world;
@@ -314,8 +330,10 @@ void Renderer::draw(int width, int height, const Camera& camera, const Scene& sc
    vertices.clear();
    indices.clear();
    std::vector<Vec3> normals(particles.size());
+   cloth_ranges_.clear();
    for (const auto& grid : scene.cloths)
    {
+      const auto first_index = indices.size();
       for (const auto& [a, b, c] : grid.triangles(world))
       {
          const Vec3 n = tinyverlet::cross(particles[b].position - particles[a].position,
@@ -325,6 +343,7 @@ void Renderer::draw(int width, int height, const Camera& camera, const Scene& sc
          normals[c] += n;
          indices.insert(indices.end(), {a, b, c});
       }
+      cloth_ranges_.emplace_back(first_index, indices.size() - first_index);
    }
    for (std::size_t i = 0; i < particles.size(); ++i)
    {
@@ -371,18 +390,31 @@ void Renderer::draw(int width, int height, const Camera& camera, const Scene& sc
    const Mat4 mvp = perspective(camera.fov_y, aspect, 0.05f, 100.0f) * camera.view();
 
    draw_mesh(grid_, GL_LINES, mvp, {0.27f, 0.27f, 0.3f}, 0);
+   // pushed further back than the cloth (which is offset for its wireframe),
+   // so cloth resting on a sphere never loses the depth test
+   glEnable(GL_POLYGON_OFFSET_FILL);
+   glPolygonOffset(3.0f, 3.0f);
    for (const auto& sphere : world.spheres)
    {
       // drawn slightly smaller so cloth resting on it does not z-fight
       const auto& c = sphere.center;
       draw_mesh(spheres_, GL_TRIANGLES, mvp, {0.55f, 0.58f, 0.62f}, 1, {c.x, c.y, c.z, sphere.radius * 0.985f});
    }
+   glDisable(GL_POLYGON_OFFSET_FILL);
 
    if (display.surfaces)
    {
       glEnable(GL_POLYGON_OFFSET_FILL);
       glPolygonOffset(1.0f, 1.0f);
-      draw_mesh(cloth_, GL_TRIANGLES, mvp, display.cloth_color, 1);
+      // the first cloth uses the chosen colour, further ones get their own
+      constexpr std::array<std::array<float, 3>, 3> others{
+          {{0.95f, 0.74f, 0.32f}, {0.36f, 0.7f, 0.55f}, {0.62f, 0.5f, 0.85f}}};
+      for (std::size_t k = 0; k < cloth_ranges_.size(); ++k)
+      {
+         const auto& color = k == 0 ? display.cloth_color : others[(k - 1) % others.size()];
+         const auto [offset, count] = cloth_ranges_[k];
+         draw_range(cloth_, offset, count, mvp, color);
+      }
       draw_mesh(boxes_, GL_TRIANGLES, mvp, {0.35f, 0.62f, 0.86f}, 2);
       glDisable(GL_POLYGON_OFFSET_FILL);
    }

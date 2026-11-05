@@ -12,8 +12,8 @@ using tinyverlet::Vec3;
 namespace
 {
 
-constexpr std::array<std::string_view, 5> names{"cloth on sphere", "curtain in the wind", "tearable cloth", "ropes",
-                                                "soft boxes"};
+constexpr std::array<std::string_view, 6> names{"cloth on sphere", "three sheets", "curtain in the wind",
+                                                "tearable cloth",  "ropes",        "soft boxes"};
 
 Scene cloth_on_sphere()
 {
@@ -26,9 +26,36 @@ Scene cloth_on_sphere()
    constexpr float spacing = 0.065f;
    const float half = spacing * static_cast<float>(n - 1) * 0.5f;
    scene.cloths.push_back(tinyverlet::add_cloth(world, {-half, 2.0f, -half}, {spacing, 0, 0}, {0, 0, spacing}, n, n));
+   world.settings.particle_radius = spacing * 0.45f;  // folds stack instead of passing through
 
    scene.camera_target = {0.0f, 0.9f, 0.0f};
    scene.camera_distance = 4.2f;
+   return scene;
+}
+
+// three sheets, turned against each other, dropped onto a sphere one after another
+Scene three_sheets()
+{
+   Scene scene;
+   auto& world = scene.world;
+   world.settings.ground = 0.0f;
+   world.spheres.push_back({{0.0f, 0.7f, 0.0f}, 0.55f});
+
+   constexpr std::uint32_t n = 26;
+   constexpr float spacing = 0.07f;
+   world.settings.particle_radius = spacing * 0.45f;
+   const float half = spacing * static_cast<float>(n - 1) * 0.5f;
+   for (int k = 0; k < 3; ++k)
+   {
+      const float angle = 0.5f * static_cast<float>(k);
+      const Vec3 u{std::cos(angle) * spacing, 0.0f, std::sin(angle) * spacing};
+      const Vec3 v{-std::sin(angle) * spacing, 0.0f, std::cos(angle) * spacing};
+      const Vec3 origin = Vec3{0.0f, 1.6f + 0.5f * static_cast<float>(k), 0.0f} - (u + v) * (half / spacing);
+      scene.cloths.push_back(tinyverlet::add_cloth(world, origin, u, v, n, n));
+   }
+
+   scene.camera_target = {0.0f, 0.7f, 0.0f};
+   scene.camera_distance = 4.4f;
    return scene;
 }
 
@@ -62,6 +89,7 @@ Scene curtain(bool tearable)
    }
 
    scene.cloths.push_back(grid);
+   world.settings.particle_radius = spacing * 0.45f;
    scene.camera_target = {0.0f, 1.5f, 0.0f};
    scene.camera_distance = 4.0f;
    scene.wind = tearable ? 0.0f : 4.0f;
@@ -147,10 +175,11 @@ Scene make_scene(std::size_t index)
 {
    switch (index)
    {
-      case 1: return curtain(false);
-      case 2: return curtain(true);
-      case 3: return ropes();
-      case 4: return soft_boxes();
+      case 1: return three_sheets();
+      case 2: return curtain(false);
+      case 3: return curtain(true);
+      case 4: return ropes();
+      case 5: return soft_boxes();
       default: return cloth_on_sphere();
    }
 }

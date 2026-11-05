@@ -314,6 +314,88 @@ void test_rope_box_wind()
    check(edge_on.particles[4].position == Vec3{1, 1, 0}, "wind along the sheet does not push it");
 }
 
+void test_self_collision()
+{
+   // a particle dropped onto a pinned one rests one diameter above it
+   const auto drop = [](float radius)
+   {
+      World world;
+      world.settings.particle_radius = radius;
+      world.add_particle({0, 0, 0}, 0.0f);
+      world.add_particle({0, 1, 0});
+      for (int i = 0; i < 240; ++i)
+      {
+         world.step(1.0f / 120.0f);
+         world.particles[1].position.x = world.particles[1].previous.x = 0.0f;  // keep it on the axis
+         world.particles[1].position.z = world.particles[1].previous.z = 0.0f;
+      }
+      return world.particles[1].position.y;
+   };
+   check(near(drop(0.1f), 0.2f, 1e-3f), "falling particle rests one diameter above the pinned one");
+   check(drop(0.0f) < -1.0f, "without a radius it falls straight through");
+
+   // two sheets dropped on the ground stack instead of merging
+   const auto stack = [](float radius)
+   {
+      World world;
+      world.settings.ground = 0.0f;
+      world.settings.particle_radius = radius;
+      const auto lower = tinyverlet::add_cloth(world, {-0.5f, 0.3f, -0.5f}, {0.1f, 0, 0}, {0, 0, 0.1f}, 11, 11);
+      const auto upper = tinyverlet::add_cloth(world, {-0.5f, 0.6f, -0.5f}, {0.1f, 0, 0}, {0, 0, 0.1f}, 11, 11);
+      for (int i = 0; i < 360; ++i)
+      {
+         world.step(1.0f / 120.0f);
+      }
+      float lower_y = 0.0f;
+      float upper_y = 0.0f;
+      for (std::uint32_t k = 0; k < 121; ++k)
+      {
+         lower_y += world.particles[lower.first + k].position.y;
+         upper_y += world.particles[upper.first + k].position.y;
+      }
+      return (upper_y - lower_y) / 121.0f;
+   };
+   const float gap = stack(0.04f);
+   check(gap > 0.07f && gap < 0.09f, "upper sheet rests about one diameter on the lower one");
+   check(std::abs(stack(0.0f)) < 1e-3f, "without a radius both sheets lie in the same plane");
+
+   // a radius larger than half the spacing must not blow up the cloth:
+   // neighbours joined by short constraints are excluded
+   World big;
+   big.settings.particle_radius = 0.08f;  // diameter 0.16 > spacing 0.1
+   big.settings.gravity = {};
+   tinyverlet::add_cloth(big, {}, {0.1f, 0, 0}, {0, 0, 0.1f}, 6, 6);
+   for (int i = 0; i < 60; ++i)
+   {
+      big.step(1.0f / 120.0f);
+   }
+   bool intact = finite(big);
+   for (const auto& c : big.constraints)
+   {
+      intact = intact && near(tinyverlet::length(big.particles[c.b].position - big.particles[c.a].position),
+                              c.rest_length, 1e-3f);
+   }
+   check(intact, "connected neighbours are not pushed apart");
+
+   // off by default: identical to a world without the setting
+   const auto run = [](bool set_zero)
+   {
+      World world;
+      world.settings.ground = 0.0f;
+      if (set_zero)
+      {
+         world.settings.particle_radius = 0.0f;
+      }
+      tinyverlet::add_cloth(world, {-0.5f, 1, -0.5f}, {0.1f, 0, 0}, {0, 0, 0.1f}, 11, 11);
+      for (int i = 0; i < 120; ++i)
+      {
+         world.step(1.0f / 120.0f);
+      }
+      return world.particles[60].position;
+   };
+   check(run(true) == run(false), "radius 0 changes nothing");
+}
+
 void test_determinism()
 {
    const auto run = []
@@ -350,6 +432,7 @@ int main()
    test_restitution();
    test_cloth_and_tearing();
    test_rope_box_wind();
+   test_self_collision();
    test_determinism();
 
    if (failures > 0)

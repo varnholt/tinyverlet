@@ -3,12 +3,12 @@
 [![CI](https://github.com/varnholt/tinyverlet/actions/workflows/ci.yml/badge.svg)](https://github.com/varnholt/tinyverlet/actions/workflows/ci.yml)
 
 Verlet physics in a single C++23 header: particles, distance constraints, cloth,
-ropes, soft boxes, collisions, wind and tearing. Comes with an OpenGL ES 3 testbed
+ropes, soft boxes, collisions, self-collision, wind and tearing. Comes with an OpenGL ES 3 testbed
 that also runs in the browser (WebGL2 via Emscripten).
 
 **[Live demo](https://varnholt.github.io/tinyverlet/)**: the testbed as WebAssembly, right in your browser.
 
-[![cloth draped over a sphere in the testbed](doc/testbed.png)](https://varnholt.github.io/tinyverlet/)
+[![three cloth sheets piled on a sphere in the testbed](doc/testbed.png)](https://varnholt.github.io/tinyverlet/)
 
 - one header, no dependencies: copy `include/tinyverlet/tinyverlet.hpp` into your project
 - or use it as a CMake library: `add_subdirectory`, `FetchContent` or `find_package`
@@ -58,11 +58,27 @@ glm::vec3 p = world.particles[0].position;
 | `add_wind(world, triangles, wind)` | pushes a surface along its normals; `wind` is the acceleration of a sheet facing it |
 
 `Settings` holds gravity, damping, iterations, restitution, friction, the tear ratio,
-an optional ground plane and an optional bounding box. Invalid input (missing
+an optional ground plane, an optional bounding box and the particle radius for
+self-collision. Invalid input (missing
 particles, bad stiffness or mass) throws `std::invalid_argument`.
 
-Particles only collide with spheres, the ground and the box, not with each other,
-so folds of the same cloth can pass through one another.
+### Self-collision
+
+By default particles only collide with spheres, the ground and the box, so folds of
+a cloth can pass through each other. Set `settings.particle_radius` (a bit under half
+the cloth spacing works well) and particles also push each other apart, with
+friction, so folds and stacked sheets rest on one another:
+
+```cpp
+world.settings.particle_radius = 0.45f * spacing;
+```
+
+Once per step a spatial hash collects the pairs that are close enough to touch
+during the step; every solver iteration then only checks that list. Pairs joined by
+a constraint shorter than two radii are skipped, so a cloth's own neighbours never
+push each other apart. It is particle against particle, not triangle against
+triangle: very fast motion can still slip a particle through a gap. In the testbed
+it roughly doubles the step time (1.5 ms for three sheets of 676 particles each).
 
 ### How it works
 
@@ -82,11 +98,13 @@ constraints stretched beyond `tear_ratio` times their rest length are removed.
 
 | | |
 |---|---|
-| ![cloth falling onto a sphere](doc/cloth_on_sphere.gif) | ![gathered curtain in gusty wind](doc/curtain_in_the_wind.gif) |
-| ![a ball tearing through cloth](doc/tearable_cloth.gif) | ![rigid, soft and squishy boxes](doc/soft_boxes.gif) |
+| ![cloth falling onto a sphere](doc/cloth_on_sphere.gif) | ![three sheets piling up on a sphere](doc/three_sheets.gif) |
+| ![gathered curtain in gusty wind](doc/curtain_in_the_wind.gif) | ![a ball tearing through cloth](doc/tearable_cloth.gif) |
+| ![a ball hitting swinging ropes](doc/ropes.gif) | ![rigid, soft and squishy boxes](doc/soft_boxes.gif) |
 
-Five scenes: cloth on a sphere, a gathered curtain in gusty wind, a tearable cloth,
-ropes carrying boxes, and rigid to squishy boxes. A Dear ImGui panel changes every
+Six scenes: cloth on a sphere, three sheets piling up, a gathered curtain in gusty
+wind, a tearable cloth, ropes carrying boxes, and rigid to squishy boxes. The cloth
+scenes have self-collision on; the panel switches it and sets the radius. A Dear ImGui panel changes every
 setting live and shows particle and constraint counts and the step time.
 Drag a particle to pull it (and tear the cloth), drag elsewhere to orbit, scroll to
 zoom; B throws a ball at whatever you look at, Space pauses, R resets, Tab switches

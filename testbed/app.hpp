@@ -54,8 +54,9 @@ struct App
    std::size_t torn = 0;
    double step_milliseconds = 0.0;
    bool show_fps = true;
-   std::vector<Ball> balls;        // the last balls.size() spheres of the world
-   std::size_t scene_spheres = 0;  // spheres that belong to the scene itself
+   float collision_radius = 0.03f;  // remembered while self-collision is switched off
+   std::vector<Ball> balls;         // the last balls.size() spheres of the world
+   std::size_t scene_spheres = 0;   // spheres that belong to the scene itself
    std::string status;
 
    // mouse
@@ -80,6 +81,10 @@ struct App
       grab.reset();
       balls.clear();
       scene_spheres = scene.world.spheres.size();
+      if (scene.world.settings.particle_radius > 0.0f)
+      {
+         collision_radius = scene.world.settings.particle_radius;
+      }
       renderer->set_scene(scene);
    }
 
