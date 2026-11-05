@@ -39,7 +39,7 @@ Scene curtain(bool tearable)
    world.settings.ground = 0.0f;
    if (tearable)
    {
-      world.settings.tear_ratio = 1.6f;
+      world.settings.tear_ratio = 1.35f;
       world.settings.iterations = 12;
    }
 

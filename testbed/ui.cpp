@@ -45,6 +45,11 @@ void draw_ui(App& app)
       app.load_scene(app.scene_index);
    }
    ImGui::SameLine();
+   if (ImGui::Button("throw ball"))
+   {
+      app.throw_ball();
+   }
+   ImGui::SameLine();
    ImGui::Checkbox("pause", &app.paused);
    if (app.paused)
    {
@@ -131,6 +136,7 @@ void draw_ui(App& app)
       text("drag a particle   pull it (and tear)");
       text("drag elsewhere    orbit");
       text("wheel             zoom");
+      text("b                 throw a ball");
       text("space             pause");
       text("r                 reset scene");
       text("tab               next scene");

@@ -61,6 +61,9 @@ glm::vec3 p = world.particles[0].position;
 an optional ground plane and an optional bounding box. Invalid input (missing
 particles, bad stiffness or mass) throws `std::invalid_argument`.
 
+Particles only collide with spheres, the ground and the box, not with each other,
+so folds of the same cloth can pass through one another.
+
 ### How it works
 
 Each step moves every free particle by position Verlet,
@@ -79,20 +82,29 @@ constraints stretched beyond `tear_ratio` times their rest length are removed.
 
 | | |
 |---|---|
-| ![cloth on sphere](doc/cloth_on_sphere.png) | ![curtain in the wind](doc/curtain_in_the_wind.png) |
-| ![ropes](doc/ropes.png) | ![soft boxes](doc/soft_boxes.png) |
+| ![cloth falling onto a sphere](doc/cloth_on_sphere.gif) | ![gathered curtain in gusty wind](doc/curtain_in_the_wind.gif) |
+| ![a ball tearing through cloth](doc/tearable_cloth.gif) | ![rigid, soft and squishy boxes](doc/soft_boxes.gif) |
 
 Five scenes: cloth on a sphere, a gathered curtain in gusty wind, a tearable cloth,
 ropes carrying boxes, and rigid to squishy boxes. A Dear ImGui panel changes every
 setting live and shows particle and constraint counts and the step time.
 Drag a particle to pull it (and tear the cloth), drag elsewhere to orbit, scroll to
-zoom; Space pauses, R resets, Tab switches the scene.
+zoom; B throws a ball at whatever you look at, Space pauses, R resets, Tab switches
+the scene.
 
 ```sh
 cmake -S . -B build -DTINYVERLET_BUILD_TESTBED=ON
 cmake --build build
 ./build/testbed/tinyverlet_testbed
 ./build/testbed/tinyverlet_testbed --scene "soft boxes" --time 3 --screenshot boxes.png [--ui]
+```
+
+The GIFs above are recorded the same way, frame by frame, and assembled with Pillow:
+
+```sh
+./build/testbed/tinyverlet_testbed --scene "tearable cloth" --size 480x300 \
+    --record frames --frames 72 --fps 24 --throw 0.5
+python tools/make_gif.py frames tearable_cloth.gif --fps 24
 ```
 
 The simulation runs at a fixed 120 Hz whatever the frame rate, so screenshots are

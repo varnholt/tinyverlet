@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace testbed
 {
@@ -24,6 +25,17 @@ struct Grab
    float distance = 0.0f;      // along the mouse ray
    float inverse_mass = 1.0f;  // restored on release
 };
+
+// a sphere thrown from the camera; it moves on its own and pushes particles away
+struct Ball
+{
+   tinyverlet::Vec3 velocity;
+   float age = 0.0f;
+};
+
+constexpr float ball_radius = 0.22f;
+constexpr float ball_speed = 11.0f;
+constexpr float ball_lifetime = 5.0f;
 
 struct App
 {
@@ -42,6 +54,8 @@ struct App
    std::size_t torn = 0;
    double step_milliseconds = 0.0;
    bool show_fps = true;
+   std::vector<Ball> balls;        // the last balls.size() spheres of the world
+   std::size_t scene_spheres = 0;  // spheres that belong to the scene itself
    std::string status;
 
    // mouse
@@ -64,11 +78,58 @@ struct App
       accumulator = 0.0;
       torn = 0;
       grab.reset();
+      balls.clear();
+      scene_spheres = scene.world.spheres.size();
       renderer->set_scene(scene);
+   }
+
+   void throw_ball()
+   {
+      // lob it so that it arrives at the camera target despite gravity:
+      // d = v t + g t^2 / 2  =>  v = d / t - g t / 2
+      const auto eye = camera.eye();
+      const auto towards = camera.target - eye;
+      const float distance = tinyverlet::length(towards);
+      const auto start = eye + towards * (0.5f / distance);
+      const auto flight = camera.target - start;
+      const float t = tinyverlet::length(flight) / ball_speed;
+      scene.world.spheres.push_back({start, ball_radius});
+      balls.push_back({flight * (1.0f / t) - scene.world.settings.gravity * (0.5f * t)});
+   }
+
+   void move_balls()
+   {
+      auto& spheres = scene.world.spheres;
+      const auto& settings = scene.world.settings;
+      for (std::size_t i = 0; i < balls.size(); ++i)
+      {
+         auto& ball = balls[i];
+         auto& sphere = spheres[scene_spheres + i];
+         ball.velocity += settings.gravity * step_dt;
+         sphere.center += ball.velocity * step_dt;
+         ball.age += step_dt;
+         if (settings.ground && sphere.center.y < *settings.ground + sphere.radius)
+         {
+            sphere.center.y = *settings.ground + sphere.radius;
+            ball.velocity = {ball.velocity.x * 0.9f, -ball.velocity.y * 0.5f, ball.velocity.z * 0.9f};
+         }
+      }
+
+      // drop expired balls together with their spheres
+      for (std::size_t i = balls.size(); i-- > 0;)
+      {
+         if (balls[i].age > ball_lifetime)
+         {
+            balls.erase(balls.begin() + static_cast<std::ptrdiff_t>(i));
+            spheres.erase(spheres.begin() + static_cast<std::ptrdiff_t>(scene_spheres + i));
+         }
+      }
    }
 
    void step()
    {
+      move_balls();
+
       if (wind_enabled && wind_strength > 0.0f)
       {
          // gusty breeze from the front, slowly turning

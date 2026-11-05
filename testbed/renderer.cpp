@@ -47,13 +47,14 @@ constexpr const char* vertex_shader = R"(#version 300 es
 layout(location = 0) in vec3 a_position;
 layout(location = 1) in vec3 a_normal;
 uniform mat4 u_mvp;
+uniform vec4 u_transform;  // xyz offset, w scale; used to place the unit sphere
 out vec3 v_position;
 out vec3 v_normal;
 void main()
 {
-   v_position = a_position;
+   v_position = a_position * u_transform.w + u_transform.xyz;
    v_normal = a_normal;
-   gl_Position = u_mvp * vec4(a_position, 1.0);
+   gl_Position = u_mvp * vec4(v_position, 1.0);
    gl_PointSize = 5.0;
 }
 )";
@@ -161,8 +162,10 @@ Renderer::Renderer()
    mvp_location_ = glGetUniformLocation(program_.get(), "u_mvp");
    color_location_ = glGetUniformLocation(program_.get(), "u_color");
    shading_location_ = glGetUniformLocation(program_.get(), "u_shading");
+   transform_location_ = glGetUniformLocation(program_.get(), "u_transform");
 
    spheres_ = make_mesh(GL_STATIC_DRAW);
+   upload_unit_sphere();
    grid_ = make_mesh(GL_STATIC_DRAW);
    cloth_ = make_mesh(GL_DYNAMIC_DRAW);
    boxes_ = make_mesh(GL_DYNAMIC_DRAW);
@@ -211,42 +214,40 @@ void Renderer::upload(Mesh& mesh, const std::vector<Vec3>& interleaved, const st
    glBindVertexArray(0);
 }
 
-void Renderer::set_scene(const Scene& scene)
+// one latitude/longitude unit sphere, placed per sphere by u_transform
+void Renderer::upload_unit_sphere()
 {
-   // spheres as latitude/longitude meshes
    std::vector<Vec3> vertices;
    std::vector<std::uint32_t> indices;
    constexpr std::uint32_t stacks = 24;
    constexpr std::uint32_t slices = 48;
-   for (const auto& sphere : scene.world.spheres)
+   for (std::uint32_t i = 0; i <= stacks; ++i)
    {
-      const auto base = static_cast<std::uint32_t>(vertices.size() / 2);
-      for (std::uint32_t i = 0; i <= stacks; ++i)
+      const float theta = std::numbers::pi_v<float> * static_cast<float>(i) / stacks;
+      for (std::uint32_t j = 0; j <= slices; ++j)
       {
-         const float theta = std::numbers::pi_v<float> * static_cast<float>(i) / stacks;
-         for (std::uint32_t j = 0; j <= slices; ++j)
-         {
-            const float phi = 2.0f * std::numbers::pi_v<float> * static_cast<float>(j) / slices;
-            const Vec3 n{std::sin(theta) * std::cos(phi), std::cos(theta), std::sin(theta) * std::sin(phi)};
-            // drawn slightly smaller so cloth resting on it does not z-fight
-            push(vertices, sphere.center + n * (sphere.radius * 0.985f), n);
-         }
+         const float phi = 2.0f * std::numbers::pi_v<float> * static_cast<float>(j) / slices;
+         const Vec3 n{std::sin(theta) * std::cos(phi), std::cos(theta), std::sin(theta) * std::sin(phi)};
+         push(vertices, n, n);
       }
-      for (std::uint32_t i = 0; i < stacks; ++i)
+   }
+   for (std::uint32_t i = 0; i < stacks; ++i)
+   {
+      for (std::uint32_t j = 0; j < slices; ++j)
       {
-         for (std::uint32_t j = 0; j < slices; ++j)
-         {
-            const std::uint32_t a = base + i * (slices + 1) + j;
-            const std::uint32_t b = a + slices + 1;
-            indices.insert(indices.end(), {a, b, a + 1, a + 1, b, b + 1});
-         }
+         const std::uint32_t a = i * (slices + 1) + j;
+         const std::uint32_t b = a + slices + 1;
+         indices.insert(indices.end(), {a, b, a + 1, a + 1, b, b + 1});
       }
    }
    upload(spheres_, vertices, indices, GL_STATIC_DRAW);
+}
 
+void Renderer::set_scene(const Scene& scene)
+{
    // ground grid and the bounds box as lines
-   vertices.clear();
-   indices.clear();
+   std::vector<Vec3> vertices;
+   std::vector<std::uint32_t> indices;
    const auto line = [&](const Vec3& a, const Vec3& b)
    {
       const auto i = static_cast<std::uint32_t>(vertices.size() / 2);
@@ -280,7 +281,8 @@ void Renderer::set_scene(const Scene& scene)
    upload(grid_, vertices, indices, GL_STATIC_DRAW);
 }
 
-void Renderer::draw_mesh(const Mesh& mesh, GLenum mode, const Mat4& mvp, std::array<float, 3> color, int shading) const
+void Renderer::draw_mesh(const Mesh& mesh, GLenum mode, const Mat4& mvp, std::array<float, 3> color, int shading,
+                         std::array<float, 4> transform) const
 {
    if (mesh.count == 0)
    {
@@ -289,6 +291,7 @@ void Renderer::draw_mesh(const Mesh& mesh, GLenum mode, const Mat4& mvp, std::ar
    glUniformMatrix4fv(mvp_location_, 1, GL_FALSE, mvp.data());
    glUniform3f(color_location_, color[0], color[1], color[2]);
    glUniform1i(shading_location_, shading);
+   glUniform4f(transform_location_, transform[0], transform[1], transform[2], transform[3]);
    glBindVertexArray(mesh.vao.get());
    if (mode == GL_POINTS)
    {
@@ -368,7 +371,12 @@ void Renderer::draw(int width, int height, const Camera& camera, const Scene& sc
    const Mat4 mvp = perspective(camera.fov_y, aspect, 0.05f, 100.0f) * camera.view();
 
    draw_mesh(grid_, GL_LINES, mvp, {0.27f, 0.27f, 0.3f}, 0);
-   draw_mesh(spheres_, GL_TRIANGLES, mvp, {0.55f, 0.58f, 0.62f}, 1);
+   for (const auto& sphere : world.spheres)
+   {
+      // drawn slightly smaller so cloth resting on it does not z-fight
+      const auto& c = sphere.center;
+      draw_mesh(spheres_, GL_TRIANGLES, mvp, {0.55f, 0.58f, 0.62f}, 1, {c.x, c.y, c.z, sphere.radius * 0.985f});
+   }
 
    if (display.surfaces)
    {

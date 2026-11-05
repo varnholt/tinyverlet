@@ -112,12 +112,15 @@ private:
    static Mesh make_mesh(GLenum usage);
    static void upload(Mesh& mesh, const std::vector<tinyverlet::Vec3>& interleaved,
                       const std::vector<std::uint32_t>& indices, GLenum usage);
-   void draw_mesh(const Mesh& mesh, GLenum mode, const Mat4& mvp, std::array<float, 3> color, int shading) const;
+   void draw_mesh(const Mesh& mesh, GLenum mode, const Mat4& mvp, std::array<float, 3> color, int shading,
+                  std::array<float, 4> transform = {0.0f, 0.0f, 0.0f, 1.0f}) const;
+   void upload_unit_sphere();
 
    Program program_;
    GLint mvp_location_ = -1;
    GLint color_location_ = -1;
    GLint shading_location_ = -1;
+   GLint transform_location_ = -1;
 
    Mesh spheres_;
    Mesh grid_;

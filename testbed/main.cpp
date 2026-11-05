@@ -1,6 +1,11 @@
 // tinyverlet testbed: cloth, ropes and soft bodies on Verlet integration.
 //
-//   tinyverlet_testbed [--scene NAME] [--screenshot out.png [--time SECONDS] [--ui]] [--size WxH]
+//   tinyverlet_testbed [--scene NAME] [--size WxH]
+//                      [--screenshot out.png [--time SECONDS] [--ui]]
+//                      [--record DIR [--frames N] [--fps F] [--orbit RADIANS_PER_SECOND] [--throw SECONDS]]
+//
+// --record writes DIR/frame_0000.png ... for tools/make_gif.py; --throw throws a
+// ball from the camera at that time.
 //
 // The ImGui panel drives everything; with the mouse, drag a particle to pull it
 // and drag elsewhere to orbit; wheel zooms, Space pauses, R resets, Tab switches scene.
@@ -16,7 +21,10 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cmath>
 #include <exception>
+#include <filesystem>
+#include <format>
 #include <functional>
 #include <optional>
 #include <print>
@@ -48,6 +56,7 @@ void on_key(GLFWwindow* window, int key, int /*scancode*/, int action, int /*mod
    switch (key)
    {
       case GLFW_KEY_SPACE: app.paused = !app.paused; break;
+      case GLFW_KEY_B: app.throw_ball(); break;
       case GLFW_KEY_R: app.load_scene(app.scene_index); break;
       case GLFW_KEY_TAB: app.load_scene((app.scene_index + 1) % testbed::scene_names().size()); break;
       case GLFW_KEY_ESCAPE: glfwSetWindowShouldClose(window, GLFW_TRUE); break;
@@ -165,6 +174,11 @@ struct Options
    bool ui = false;
    int width = 1280;
    int height = 720;
+   std::optional<std::string> record;
+   int frames = 72;
+   float fps = 24.0f;
+   float orbit = 0.0f;
+   std::optional<float> throw_at;
 };
 
 template <class T>
@@ -218,6 +232,28 @@ std::optional<Options> parse_options(std::span<char*> args)
       {
          options.ui = true;
       }
+      else if (arg == "--record" && !value.empty())
+      {
+         options.record = std::string{value};
+         ++i;
+      }
+      else if (arg == "--frames" && parse(value, options.frames) && options.frames > 0)
+      {
+         ++i;
+      }
+      else if (arg == "--fps" && parse(value, options.fps) && options.fps > 0.0f)
+      {
+         ++i;
+      }
+      else if (arg == "--orbit" && parse(value, options.orbit))
+      {
+         ++i;
+      }
+      else if (float at = 0.0f; arg == "--throw" && parse(value, at) && at >= 0.0f)
+      {
+         options.throw_at = at;
+         ++i;
+      }
       else
       {
          std::println(stderr, "unknown or incomplete option {}", arg);
@@ -240,7 +276,7 @@ int run(const Options& options)
    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
    glfwWindowHint(GLFW_SAMPLES, 4);
-   if (options.screenshot)
+   if (options.screenshot || options.record)
    {
       glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
    }
@@ -271,7 +307,34 @@ int run(const Options& options)
       app.renderer.emplace();
       app.load_scene(options.scene);
 
-      if (options.screenshot)
+      if (options.record)
+      {
+         // fixed steps between frames, so recordings are reproducible
+         std::filesystem::create_directories(*options.record);
+         const int steps_per_frame =
+             std::max(1, static_cast<int>(std::lround(1.0f / (options.fps * testbed::step_dt))));
+         bool thrown = false;
+         for (int frame_index = 0; frame_index < options.frames && exit_code == 0; ++frame_index)
+         {
+            const auto file = std::filesystem::path(*options.record) / std::format("frame_{:04}.png", frame_index);
+            if (!app.renderer->screenshot(file, options.width, options.height, app.camera, app.scene, app.display))
+            {
+               std::println(stderr, "could not write {}", file.string());
+               exit_code = 1;
+            }
+            for (int i = 0; i < steps_per_frame; ++i)
+            {
+               if (options.throw_at && !thrown && app.time >= *options.throw_at)
+               {
+                  app.throw_ball();
+                  thrown = true;
+               }
+               app.step();
+            }
+            app.camera.yaw += options.orbit / options.fps;
+         }
+      }
+      else if (options.screenshot)
       {
          // fixed steps, so screenshots are reproducible
          const auto steps = static_cast<int>(options.time / testbed::step_dt);
