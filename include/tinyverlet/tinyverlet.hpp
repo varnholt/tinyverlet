@@ -2,6 +2,8 @@
 //
 // https://github.com/varnholt/tinyverlet
 //
+// SPDX-License-Identifier: MIT
+//
 // Usage:
 //    tinyverlet::World world;
 //    world.settings.ground = 0.0f;

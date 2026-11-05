@@ -155,6 +155,6 @@ Tests build only when tinyverlet is the top-level project; the testbed only with
 
 ## License
 
-[GPL-3.0](LICENSE). The testbed uses [GLFW](https://www.glfw.org) (zlib),
+[MIT](LICENSE). The testbed uses [GLFW](https://www.glfw.org) (zlib),
 [Dear ImGui](https://github.com/ocornut/imgui) (MIT), a [glad](https://github.com/Dav1dde/glad)
 generated loader and [stb_image_write](https://github.com/nothings/stb) (public domain / MIT).
