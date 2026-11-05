@@ -1,0 +1,12 @@
+add_executable(tinyverlet_test tinyverlet_test.cpp)
+target_link_libraries(tinyverlet_test PRIVATE tinyverlet::tinyverlet tinyverlet_warnings)
+add_test(NAME tinyverlet_test COMMAND tinyverlet_test)
+
+add_executable(tinyverlet_scenes_test scenes_test.cpp ${PROJECT_SOURCE_DIR}/testbed/scenes.cpp)
+target_include_directories(tinyverlet_scenes_test PRIVATE ${PROJECT_SOURCE_DIR}/testbed)
+target_link_libraries(tinyverlet_scenes_test PRIVATE tinyverlet::tinyverlet tinyverlet_warnings)
+add_test(NAME tinyverlet_scenes_test COMMAND tinyverlet_scenes_test)
+
+add_executable(tinyverlet_interop_test interop_test.cpp)
+target_link_libraries(tinyverlet_interop_test PRIVATE tinyverlet::tinyverlet tinyverlet_warnings)
+add_test(NAME tinyverlet_interop_test COMMAND tinyverlet_interop_test)
