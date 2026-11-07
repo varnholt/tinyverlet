@@ -171,6 +171,10 @@ target_link_libraries(my_app PRIVATE tinyverlet::tinyverlet)
 Tests build only when tinyverlet is the top-level project; the testbed only with
 `TINYVERLET_BUILD_TESTBED=ON`. Override with `TINYVERLET_BUILD_TESTS` and `TINYVERLET_INSTALL`.
 
+## Rust
+
+[`rust/`](rust/README.md) contains the native `tinyverlet` Rust crate: no dependencies and no C++ toolchain required. It includes examples, tests against the C++ implementation, and Cargo packaging. See the [Rust README](rust/README.md) for the API and local installation.
+
 ## License
 
 [MIT](LICENSE). The testbed uses [GLFW](https://www.glfw.org) (zlib),
