@@ -25,7 +25,7 @@ tinyverlet = "0.1"
 
 The crate lives alongside the C++ implementation in `rust/`. To use a local checkout, replace the version with `{ path = "/path/to/tinyverlet/rust" }`.
 
-[crates.io](https://crates.io/crates/tinyverlet) · [API documentation](https://docs.rs/tinyverlet)
+[crates.io](https://crates.io/crates/tinyverlet) | [API documentation](https://docs.rs/tinyverlet)
 
 ## API
 
