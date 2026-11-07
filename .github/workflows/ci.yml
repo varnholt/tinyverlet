@@ -2,6 +2,7 @@ name: CI
 
 on:
   push:
+    branches: [master]
   pull_request:
 
 jobs:
@@ -117,7 +118,7 @@ jobs:
   pages:
     name: deploy live demo
     if: github.event_name == 'push' && github.ref_name == github.event.repository.default_branch
-    needs: web
+    needs: [web, demo-web]
     runs-on: ubuntu-24.04
     permissions:
       pages: write
@@ -132,6 +133,11 @@ jobs:
           name: testbed-web
           path: site
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-demo-web
+          path: site/rust
+
       - name: Use the testbed as the start page
         run: mv site/tinyverlet_testbed.html site/index.html
 
@@ -141,3 +147,75 @@ jobs:
 
       - id: deploy
         uses: actions/deploy-pages@v4
+
+  demo-native:
+    name: Rust demo (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: rust/demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          components: clippy, rustfmt
+      - name: Linux windowing dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libgl1-mesa-dev libegl1-mesa-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/demo -> target
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked --all-targets
+      - run: cargo build --locked --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-demo-${{ runner.os }}
+          path: |
+            rust/demo/target/release/tinyverlet-demo
+            rust/demo/target/release/tinyverlet-demo.exe
+
+  demo-web:
+    name: Rust demo (WebAssembly / WebGL2)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: rust/demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.95.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust/demo -> target
+          cache-directories: ~/.cargo/bin
+      - name: Install JavaScript bindings generator
+        run: |
+          if ! wasm-bindgen --version 2>/dev/null | grep -q '0.2.130'; then
+            cargo install wasm-bindgen-cli --version 0.2.130 --locked
+          fi
+      - run: python3 tools/build_web.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install browser test driver
+        run: |
+          npm install --no-save --package-lock=false playwright@1.65.0
+          npx playwright install --with-deps chromium
+      - name: Render browser scenarios and test inputs
+        run: node tools/smoke_web.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-demo-screenshots
+          path: rust/demo/screenshots/*.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-demo-web
+          path: rust/demo/dist
