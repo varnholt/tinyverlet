@@ -1,0 +1,14 @@
+[package]
+name = "tinyverlet"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Verlet particles, cloth, ropes, tearing and collisions"
+license = "MIT"
+repository = "https://github.com/varnholt/tinyverlet"
+readme = "README.md"
+keywords = ["verlet", "physics", "cloth", "gamedev"]
+include = ["src/**", "examples/**", "tests/**", "tools/**", "Cargo.toml", "README.md", "LICENSE"]
+
+[lints.rust]
+unsafe_code = "forbid"
