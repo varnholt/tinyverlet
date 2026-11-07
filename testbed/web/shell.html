@@ -9,12 +9,14 @@
     canvas { display: block; width: 100vw; height: 100vh; outline: none; }
     #status { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }
     #link { position: fixed; right: 12px; bottom: 10px; color: #8ab4f8; text-decoration: none; }
+  #rust-demo { position: fixed; left: 12px; bottom: 10px; color: #66dbc6; background: #14202ddd; padding: 6px 10px; border-radius: 5px; text-decoration: none; }
   </style>
 </head>
 <body>
   <canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
   <div id="status">loading...</div>
   <a id="link" href="https://github.com/varnholt/tinyverlet">github.com/varnholt/tinyverlet</a>
+  <a id="rust-demo" href="rust/">Try the Rust demo</a>
   <script>
     var Module = {
       canvas: document.getElementById('canvas'),
