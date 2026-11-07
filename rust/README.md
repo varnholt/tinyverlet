@@ -1,6 +1,6 @@
 # tinyverlet
 
-**[Interactive Rust demo](https://varnholt.github.io/tinyverlet/rust/)** — [run it natively or build for the browser](demo/README.md).
+**[Interactive Rust demo](https://varnholt.github.io/tinyverlet/rust/)** — [run it natively or build for the browser](https://github.com/varnholt/tinyverlet/blob/rust-v0.1.1/rust/demo/README.md).
 
 Native Rust Verlet particles, distance constraints, cloth, ropes, soft boxes and collisions. No dependencies, no C++ toolchain, and no unsafe code. MIT licensed. Requires Rust 1.85 or newer.
 
@@ -45,7 +45,7 @@ Particle positions, previous positions, forces, constraints and spheres are publ
 
 Settings include gravity, damping, iteration count, restitution, friction, tearing, a ground plane, box bounds, and particle radius. A positive radius enables spatial-hash self-collision; short connected neighbors are excluded. The solver uses stable pair ordering. Rust and C++ results are compared with floating-point tolerances, rather than promising identical bits across platforms.
 
-Use fixed small steps, such as 1/120 second. This is particle collision, not triangle collision or continuous collision detection; fast particles can tunnel. A zero step does nothing. Negative/nonfinite time steps and invalid settings return errors. Numerical overflow can return an error after the state has advanced; reduce the step or simulation scale before continuing. The separate [interactive demo](demo/README.md) includes a renderer. The library has no engine integration.
+Use fixed small steps, such as 1/120 second. This is particle collision, not triangle collision or continuous collision detection; fast particles can tunnel. A zero step does nothing. Negative/nonfinite time steps and invalid settings return errors. Numerical overflow can return an error after the state has advanced; reduce the step or simulation scale before continuing. The separate [interactive demo](https://github.com/varnholt/tinyverlet/blob/rust-v0.1.1/rust/demo/README.md) includes a renderer. The library has no engine integration.
 
 ## Check and run
 
